@@ -27,9 +27,9 @@ fn comparison_lookahead_preserves_adjacent_tokens_and_whitespace() {
             .expect("valid source should scan"),
         vec![
             Token::new(Less, 1, "<"),
-            Token::new(Identifier("é"), 1, "é"),
+            Token::new(Identifier, 1, "é"),
             Token::new(GreaterEqual, 1, ">="),
-            Token::new(Number(2.), 1, "2"),
+            Token::new(Number, 1, "2"),
             Token::new(LessEqual, 1, "<="),
             Token::new(Equal, 1, "="),
             Token::new(Greater, 1, ">"),
@@ -50,12 +50,12 @@ fn recognizes_function_keywords_only_as_complete_lowercase_words() {
         vec![
             Token::new(Fn, 1, "fn"),
             Token::new(Return, 1, "return"),
-            Token::new(Identifier("fn2"), 1, "fn2"),
-            Token::new(Identifier("fn_"), 1, "fn_"),
-            Token::new(Identifier("returnValue"), 1, "returnValue"),
-            Token::new(Identifier("return_"), 1, "return_"),
-            Token::new(Identifier("Fn"), 1, "Fn"),
-            Token::new(Identifier("Return"), 1, "Return"),
+            Token::new(Identifier, 1, "fn2"),
+            Token::new(Identifier, 1, "fn_"),
+            Token::new(Identifier, 1, "returnValue"),
+            Token::new(Identifier, 1, "return_"),
+            Token::new(Identifier, 1, "Fn"),
+            Token::new(Identifier, 1, "Return"),
             Token::new(Eof, 1, ""),
         ]
     );
@@ -128,12 +128,12 @@ fn recognizes_only_exact_lowercase_keywords() {
         vec![
             Token::new(If, 1, "if"),
             Token::new(Else, 1, "else"),
-            Token::new(Identifier("iffy"), 1, "iffy"),
-            Token::new(Identifier("elsewhere"), 1, "elsewhere"),
-            Token::new(Identifier("if2"), 1, "if2"),
-            Token::new(Identifier("else_"), 1, "else_"),
-            Token::new(Identifier("If"), 1, "If"),
-            Token::new(Identifier("ELSE"), 1, "ELSE"),
+            Token::new(Identifier, 1, "iffy"),
+            Token::new(Identifier, 1, "elsewhere"),
+            Token::new(Identifier, 1, "if2"),
+            Token::new(Identifier, 1, "else_"),
+            Token::new(Identifier, 1, "If"),
+            Token::new(Identifier, 1, "ELSE"),
             Token::new(Eof, 1, ""),
         ]
     );
@@ -146,11 +146,11 @@ fn preserves_utf8_identifiers_and_byte_boundaries() {
             .scan()
             .expect("valid source should scan"),
         vec![
-            Token::new(Identifier("_x2"), 1, "_x2"),
+            Token::new(Identifier, 1, "_x2"),
             Token::new(Plus, 1, "+"),
-            Token::new(Identifier("éclair"), 1, "éclair"),
+            Token::new(Identifier, 1, "éclair"),
             Token::new(Semicolon, 1, ";"),
-            Token::new(Identifier("变量9"), 2, "变量9"),
+            Token::new(Identifier, 2, "变量9"),
             Token::new(Eof, 2, ""),
         ]
     );
@@ -158,7 +158,7 @@ fn preserves_utf8_identifiers_and_byte_boundaries() {
 
 #[test]
 fn scans_sample_with_exact_lexemes() {
-    let source = String::from(" 23; 47; 69 ; 67;88;99;");
+    let source = std::string::String::from(" 23; 47; 69 ; 67;88;99;");
     let tokens = Scanner::new(&source)
         .scan()
         .expect("valid source should scan");
@@ -169,8 +169,8 @@ fn scans_sample_with_exact_lexemes() {
         tokens.iter().map(|t| t.lexeme()).collect::<Vec<_>>(),
         expected
     );
-    for (token, value) in tokens.iter().step_by(2).zip([23., 47., 69., 67., 88., 99.]) {
-        assert_eq!(token.typ(), Number(value));
+    for token in tokens[..12].iter().step_by(2) {
+        assert_eq!(token.typ(), Number);
         assert_eq!(token.line(), 1);
     }
     for token in tokens[..12].iter().skip(1).step_by(2) {
@@ -186,7 +186,7 @@ fn tracks_lines_and_skips_unicode_whitespace() {
             .scan()
             .expect("valid source should scan"),
         vec![
-            Token::new(Number(9.), 1, "9"),
+            Token::new(Number, 1, "9"),
             Token::new(Semicolon, 2, ";"),
             Token::new(Eof, 3, "")
         ]
@@ -207,6 +207,99 @@ fn handles_empty_input_and_number_at_end() {
     );
     assert_eq!(
         Scanner::new("99").scan().expect("valid source should scan"),
-        vec![Token::new(Number(99.), 1, "99"), Token::new(Eof, 1, "")]
+        vec![Token::new(Number, 1, "99"), Token::new(Eof, 1, "")]
+    );
+}
+
+#[test]
+fn scans_strings_with_exact_quoted_lexemes_at_end_of_input() {
+    for source in [
+        r#""""#,
+        r#""hello world""#,
+        "\" \t\u{2003} \"",
+        r#""éclair 变量 💡""#,
+        r#""if return 42; @ +-*/(){}<=>,.""#,
+        r#""literal\n\t""#,
+    ] {
+        assert_eq!(
+            Scanner::new(source).scan().expect("string should scan"),
+            vec![Token::new(String, 1, source), Token::new(Eof, 1, "")],
+            "source: {source:?}"
+        );
+    }
+}
+
+#[test]
+fn strings_preserve_adjacent_strings_and_other_tokens() {
+    assert_eq!(
+        Scanner::new("return\"é\"\"💡\"+42;name")
+            .scan()
+            .expect("adjacent tokens should scan"),
+        vec![
+            Token::new(Return, 1, "return"),
+            Token::new(String, 1, "\"é\""),
+            Token::new(String, 1, "\"💡\""),
+            Token::new(Plus, 1, "+"),
+            Token::new(Number, 1, "42"),
+            Token::new(Semicolon, 1, ";"),
+            Token::new(Identifier, 1, "name"),
+            Token::new(Eof, 1, ""),
+        ]
+    );
+}
+
+#[test]
+fn rejects_unterminated_strings_at_end_of_input() {
+    for source in [
+        "\"",
+        "\"hello",
+        "\"é💡",
+        "return \"oops",
+        "\"a\nb",
+        "\"ok\"\"",
+    ] {
+        assert!(
+            matches!(
+                Scanner::new(source).scan(),
+                Err(ScanError::UnterminatedString)
+            ),
+            "source: {source:?}"
+        );
+    }
+}
+
+#[test]
+fn tracks_lines_after_multiline_strings() {
+    let tokens = Scanner::new("\n\"first\n第二\n💡\";\n42")
+        .scan()
+        .expect("multiline string should scan");
+    assert_eq!(tokens[0].typ(), String);
+    assert_eq!(tokens[0].lexeme(), "\"first\n第二\n💡\"");
+    assert_eq!(
+        &tokens[1..],
+        &[
+            Token::new(Semicolon, 4, ";"),
+            Token::new(Number, 5, "42"),
+            Token::new(Eof, 5, ""),
+        ]
+    );
+}
+
+#[test]
+fn reports_unexpected_characters_after_a_closed_string() {
+    assert!(matches!(
+        Scanner::new("\"@ is allowed inside\"@").scan(),
+        Err(ScanError::UnexpectedChar('@'))
+    ));
+}
+
+#[test]
+fn displays_string_tokens_with_their_quoted_lexemes() {
+    let tokens = Scanner::new("\"\" \"é 💡\"").scan().unwrap();
+    assert_eq!(tokens[0].to_string(), "STRING \"\"");
+    assert_eq!(tokens[1].to_string(), "STRING \"é 💡\"");
+    assert_eq!(
+        ScanError::UnterminatedString.to_string(),
+        "Unterminated string"
     );
 }

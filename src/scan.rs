@@ -1,5 +1,5 @@
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub enum TokenType<'a> {
+pub enum TokenType {
     Plus,
     Minus,
     Star,
@@ -16,8 +16,9 @@ pub enum TokenType<'a> {
     LeftBrace,
     RightBrace,
 
-    Number(f64),
-    Identifier(&'a str),
+    Number,
+    Identifier,
+    String,
 
     If,
     Else,
@@ -33,17 +34,17 @@ pub enum TokenType<'a> {
 
 #[derive(Debug, PartialEq)]
 pub struct Token<'a> {
-    typ: TokenType<'a>,
+    typ: TokenType,
     line: usize,
     lexeme: &'a str,
 }
 
 impl<'a> Token<'a> {
-    pub fn new(typ: TokenType<'a>, line: usize, lexeme: &'a str) -> Token<'a> {
+    pub fn new(typ: TokenType, line: usize, lexeme: &'a str) -> Token<'a> {
         Token { typ, line, lexeme }
     }
 
-    pub fn typ(&self) -> TokenType<'a> {
+    pub fn typ(&self) -> TokenType {
         self.typ
     }
 
@@ -76,8 +77,9 @@ impl<'a> std::fmt::Display for Token<'a> {
             RightParen => write!(f, "RIGHT_PAREN"),
             LeftBrace => write!(f, "LEFT_BRACE"),
             RightBrace => write!(f, "RIGHT_BRACE"),
-            Number(value) => write!(f, "NUM {}", value),
-            Identifier(value) => write!(f, "IDENT {}", value),
+            Number => write!(f, "NUM {}", self.lexeme()),
+            Identifier => write!(f, "IDENT {}", self.lexeme()),
+            String => write!(f, "STRING {}", self.lexeme()),
             If => write!(f, "IF"),
             Else => write!(f, "ELSE"),
             Fn => write!(f, "FN"),
@@ -94,6 +96,7 @@ impl<'a> std::fmt::Display for Token<'a> {
 pub enum ScanError {
     UnexpectedChar(char),
     Io(std::io::Error),
+    UnterminatedString,
 }
 
 impl From<std::io::Error> for ScanError {
@@ -107,6 +110,7 @@ impl std::fmt::Display for ScanError {
         match self {
             ScanError::Io(error) => write!(f, "I/O error: {}", error),
             ScanError::UnexpectedChar(c) => write!(f, "Unexpected character: {}", c),
+            ScanError::UnterminatedString => write!(f, "Unterminated string"),
         }
     }
 }
@@ -116,7 +120,7 @@ pub struct Scanner<'a> {
     start: usize,
     current: usize,
     line: usize,
-    keywords: HashMap<&'static str, TokenType<'a>>,
+    keywords: HashMap<&'static str, TokenType>,
 }
 
 impl<'a> Scanner<'a> {
@@ -130,7 +134,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn keywords() -> HashMap<&'static str, TokenType<'a>> {
+    fn keywords() -> HashMap<&'static str, TokenType> {
         HashMap::from([("if", If), ("else", Else), ("fn", Fn), ("return", Return)])
     }
 
@@ -187,6 +191,7 @@ impl<'a> Scanner<'a> {
             ';' => self.make(Semicolon),
             ',' => self.make(Comma),
             '.' => self.make(Dot),
+            '"' => self.string()?,
             c if c.is_ascii_digit() => self.number(),
             c if c.is_alphabetic() || c == '_' => self.identifier(),
             c => return Err(ScanError::UnexpectedChar(c)),
@@ -215,7 +220,7 @@ impl<'a> Scanner<'a> {
         self.current >= self.source.len()
     }
 
-    fn make(&self, typ: TokenType<'a>) -> Token<'a> {
+    fn make(&self, typ: TokenType) -> Token<'a> {
         let lexeme = &self.source[self.start..self.current];
         Token::new(typ, self.line, lexeme)
     }
@@ -225,11 +230,7 @@ impl<'a> Scanner<'a> {
             self.consume();
         }
 
-        let value = self.source[self.start..self.current]
-            .parse::<f64>()
-            .expect("Unable to parse number");
-
-        self.make(Number(value))
+        self.make(Number)
     }
 
     fn identifier(&mut self) -> Token<'a> {
@@ -247,7 +248,18 @@ impl<'a> Scanner<'a> {
 
         match self.keywords.get(value) {
             Some(typ) => self.make(*typ),
-            None => self.make(Identifier(value)),
+            None => self.make(Identifier),
+        }
+    }
+
+    fn string(&mut self) -> Result<Token<'a>, ScanError> {
+        loop {
+            match self.consume() {
+                '\0' => return Err(ScanError::UnterminatedString),
+                '\n' => self.line += 1,
+                '"' => return Ok(self.make(String)),
+                _ => ()
+            }
         }
     }
 }

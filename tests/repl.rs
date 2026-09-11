@@ -120,3 +120,19 @@ fn invalid_utf8_input_reports_an_io_error_and_processes_the_next_line() {
     assert!(stdout[number..].contains("SEMICOLON"));
     assert!(stdout[number..].contains("EOF"));
 }
+
+#[test]
+fn reports_unterminated_strings_and_scans_the_next_line() {
+    let output = run_repl(b"\"unfinished\n\"hello\";");
+    assert!(output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("Scan error: UnterminatedString"),
+        "missing string error on stderr: {stderr}"
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(
+        stdout,
+        "> >    1 STRING \"hello\"\n   1 SEMICOLON\n   1 EOF\n> "
+    );
+}
