@@ -24,6 +24,7 @@ pub enum TokenType {
     Else,
     Fn,
     Return,
+    Let,
 
     Semicolon,
     Comma,
@@ -84,6 +85,7 @@ impl<'a> std::fmt::Display for Token<'a> {
             Else => write!(f, "ELSE"),
             Fn => write!(f, "FN"),
             Return => write!(f, "RETURN"),
+            Let => write!(f, "LET"),
             Semicolon => write!(f, "SEMICOLON"),
             Comma => write!(f, "COMMA"),
             Dot => write!(f, "DOT"),
@@ -135,7 +137,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn keywords() -> HashMap<&'static str, TokenType> {
-        HashMap::from([("if", If), ("else", Else), ("fn", Fn), ("return", Return)])
+        HashMap::from([("if", If), ("else", Else), ("fn", Fn), ("return", Return), ("let", Let)])
     }
 
     pub fn scan(mut self) -> Result<Vec<Token<'a>>, ScanError> {
