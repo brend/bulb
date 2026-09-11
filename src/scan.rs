@@ -33,7 +33,7 @@ pub enum TokenType {
     Eof,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Token<'a> {
     typ: TokenType,
     line: usize,
@@ -137,7 +137,13 @@ impl<'a> Scanner<'a> {
     }
 
     fn keywords() -> HashMap<&'static str, TokenType> {
-        HashMap::from([("if", If), ("else", Else), ("fn", Fn), ("return", Return), ("let", Let)])
+        HashMap::from([
+            ("if", If),
+            ("else", Else),
+            ("fn", Fn),
+            ("return", Return),
+            ("let", Let),
+        ])
     }
 
     pub fn scan(mut self) -> Result<Vec<Token<'a>>, ScanError> {
@@ -230,6 +236,14 @@ impl<'a> Scanner<'a> {
     fn number(&mut self) -> Token<'a> {
         while self.peek().is_ascii_digit() {
             self.consume();
+
+            if self.peek() == '.' {
+                self.consume();
+                while self.peek().is_ascii_digit() {
+                    self.consume();
+                }
+                break;
+            }
         }
 
         self.make(Number)
@@ -260,7 +274,7 @@ impl<'a> Scanner<'a> {
                 '\0' => return Err(ScanError::UnterminatedString),
                 '\n' => self.line += 1,
                 '"' => return Ok(self.make(String)),
-                _ => ()
+                _ => (),
             }
         }
     }

@@ -1,7 +1,10 @@
+mod compilation;
 mod scan;
 
 use scan::{ScanError, Scanner};
 use std::io::{self, Write};
+
+use crate::compilation::Compiler;
 
 fn main() {
     repl()
@@ -32,8 +35,18 @@ fn run(source: &str) -> Result<(), ScanError> {
     let scanner = Scanner::new(source);
     let tokens = scanner.scan()?;
 
-    for t in tokens {
+    println!("=== TOKENS ===");
+    for t in &tokens {
         println!("{:>4} {}", t.line(), t);
+    }
+    println!();
+
+    let compiler = Compiler::new(tokens);
+    let code = compiler.compile().unwrap();
+
+    println!("=== CODE ===");
+    for inst in code {
+        println!("{:>4} {:?}", inst.line(), inst);
     }
 
     Ok(())
