@@ -7,7 +7,9 @@ fn main() -> Result<(), std::io::Error> {
 
         input.clear();
         let bytes_read = stdin().read_line(&mut input)?;
-        if bytes_read == 0 { return Ok(()); }
+        if bytes_read == 0 {
+            return Ok(());
+        }
 
         let scanner = Scanner::new(&input);
         let tokens = scanner.scan();
@@ -15,7 +17,7 @@ fn main() -> Result<(), std::io::Error> {
         for t in tokens {
             println!("{:>4} {}", t.line, t);
         }
-    }    
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -24,6 +26,12 @@ enum TokenType<'a> {
     Minus,
     Star,
     Slash,
+
+    Equal,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
 
     LeftParen,
     RightParen,
@@ -37,9 +45,11 @@ enum TokenType<'a> {
     Else,
     Fn,
     Return,
-    
+
     Semicolon,
-    
+    Comma,
+    Dot,
+
     Eof,
 }
 
@@ -56,7 +66,10 @@ impl<'a> Token<'a> {
     }
 }
 
-use std::{collections::HashMap, io::{Write, stdin, stdout}};
+use std::{
+    collections::HashMap,
+    io::{Write, stdin, stdout},
+};
 
 use TokenType::*;
 
@@ -67,6 +80,11 @@ impl<'a> std::fmt::Display for Token<'a> {
             Minus => write!(f, "MINUS"),
             Star => write!(f, "STAR"),
             Slash => write!(f, "SLASH"),
+            Equal => write!(f, "EQUAL"),
+            Less => write!(f, "LESS"),
+            LessEqual => write!(f, "LESS_EQUAL"),
+            Greater => write!(f, "GREATER"),
+            GreaterEqual => write!(f, "GREATER_EQUAL"),
             LeftParen => write!(f, "LEFT_PAREN"),
             RightParen => write!(f, "RIGHT_PAREN"),
             LeftBrace => write!(f, "LEFT_BRACE"),
@@ -78,6 +96,8 @@ impl<'a> std::fmt::Display for Token<'a> {
             Fn => write!(f, "FN"),
             Return => write!(f, "RETURN"),
             Semicolon => write!(f, "SEMICOLON"),
+            Comma => write!(f, "COMMA"),
+            Dot => write!(f, "DOT"),
             Eof => write!(f, "EOF"),
         }
     }
@@ -103,12 +123,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn keywords() -> HashMap<&'static str, TokenType<'a>> {
-        HashMap::from([
-            ("if", If),
-            ("else", Else),
-            ("fn", Fn),
-            ("return", Return),
-        ])
+        HashMap::from([("if", If), ("else", Else), ("fn", Fn), ("return", Return)])
     }
 
     fn scan(mut self) -> Vec<Token<'a>> {
@@ -142,11 +157,28 @@ impl<'a> Scanner<'a> {
             '-' => self.make(Minus),
             '*' => self.make(Star),
             '/' => self.make(Slash),
+            '=' => self.make(Equal),
+            '<' => {
+                if self.match_char('=') {
+                    self.make(LessEqual)
+                } else {
+                    self.make(Less)
+                }
+            }
+            '>' => {
+                if self.match_char('=') {
+                    self.make(GreaterEqual)
+                } else {
+                    self.make(Greater)
+                }
+            }
             '(' => self.make(LeftParen),
             ')' => self.make(RightParen),
             '{' => self.make(LeftBrace),
             '}' => self.make(RightBrace),
             ';' => self.make(Semicolon),
+            ',' => self.make(Comma),
+            '.' => self.make(Dot),
             c if c.is_ascii_digit() => self.number(),
             c if c.is_alphabetic() || c == '_' => self.identifier(),
             _ => unreachable!(),
@@ -161,6 +193,14 @@ impl<'a> Scanner<'a> {
         let c = self.peek();
         self.current += c.len_utf8();
         c
+    }
+
+    fn match_char(&mut self, c: char) -> bool {
+        if self.peek() == c {
+            self.consume();
+            return true
+        }
+        false
     }
 
     fn is_at_end(&self) -> bool {

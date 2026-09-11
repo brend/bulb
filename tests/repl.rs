@@ -25,7 +25,9 @@ fn assert_exits_after_stdin_closes(input: &[u8]) {
         }
         if Instant::now() >= deadline {
             // Always kill and reap the looping process before failing the test.
-            child.kill().expect("could not terminate bulb after timeout");
+            child
+                .kill()
+                .expect("could not terminate bulb after timeout");
             child.wait().expect("could not reap bulb after timeout");
             panic!("bulb did not exit within two seconds after stdin closed");
         }
