@@ -62,18 +62,95 @@ fn assert_exits_after_stdin_closes(input: &[u8]) {
 }
 
 #[test]
+fn code_listing_prints_each_instruction_line_number_once() {
+    let output = run_repl(b"42\n");
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let code = stdout
+        .split_once("=== CODE ===\n")
+        .expect("missing code listing")
+        .1;
+    let instruction = code.lines().next().expect("missing instruction");
+    assert_eq!(
+        instruction.split_whitespace().collect::<Vec<_>>(),
+        ["1", "CON", "42"]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn permanent_stdin_error_is_reported_once_and_terminates_the_repl() {
+    // Reading a directory reliably produces a permanent I/O error on Unix.
+    let directory = std::fs::File::open(env!("CARGO_MANIFEST_DIR")).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_bulb"))
+        .stdin(Stdio::from(directory))
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("could not start bulb");
+    let mut stderr = child.stderr.take().unwrap();
+    let reader = thread::spawn(move || {
+        let mut captured = Vec::new();
+        let mut buffer = [0; 4096];
+        loop {
+            let count = stderr.read(&mut buffer).unwrap();
+            if count == 0 {
+                return captured;
+            }
+            // Keep draining after the cap: closing the pipe could make the
+            // buggy process panic and falsely appear to handle the read error.
+            let keep = count.min((64 * 1024usize).saturating_sub(captured.len()));
+            captured.extend_from_slice(&buffer[..keep]);
+        }
+    });
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let timed_out = loop {
+        if child.try_wait().expect("could not poll bulb").is_some() {
+            break false;
+        }
+        if Instant::now() >= deadline {
+            child.kill().expect("could not terminate bulb after timeout");
+            child.wait().expect("could not reap bulb after timeout");
+            break true;
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
+    let stderr = String::from_utf8(reader.join().expect("stderr reader panicked")).unwrap();
+    assert!(!timed_out, "REPL kept retrying a permanent stdin error");
+    assert!(!stderr.contains("panicked at"), "I/O errors must not panic");
+    assert_eq!(stderr.matches("Read error:").count(), 1);
+}
+
+#[test]
 fn exits_when_stdin_is_empty() {
     assert_exits_after_stdin_closes(b"");
 }
 
 #[test]
+fn reports_parse_errors_and_compiles_the_next_line() {
+    let output = run_repl(b")\n7\n");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        output.status.success(),
+        "parse errors should not terminate the REPL: {stderr}"
+    );
+    assert!(
+        stderr.contains("Parse error: UnexpectedToken"),
+        "missing parse error diagnostic: {stderr}"
+    );
+    assert!(!stderr.contains("panicked at"), "parse errors must not panic");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("CON 7"), "next line was not compiled: {stdout}");
+}
+
+#[test]
 fn exits_after_a_final_line_without_a_newline() {
-    assert_exits_after_stdin_closes(b"if (answer2 + 42) { else; }");
+    assert_exits_after_stdin_closes(b"42");
 }
 
 #[test]
 fn reports_scan_errors_and_processes_the_next_line() {
-    let output = run_repl(b"@\n42;");
+    let output = run_repl(b"@\n42");
     assert!(output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -83,7 +160,7 @@ fn reports_scan_errors_and_processes_the_next_line() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(!stdout.contains("Scan error:"));
     let number = stdout.find("NUM 42").expect("next line was not processed");
-    assert!(stdout[number..].contains("SEMICOLON"));
+    assert!(stdout[number..].contains("CON 42"));
     assert!(stdout[number..].contains("EOF"));
 }
 
@@ -100,7 +177,7 @@ fn blank_lines_do_not_end_the_repl() {
 
 #[test]
 fn invalid_utf8_input_reports_an_io_error_and_processes_the_next_line() {
-    let output = run_repl(b"\xff\n42;");
+    let output = run_repl(b"\xff\n42");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         output.status.success(),
@@ -117,13 +194,13 @@ fn invalid_utf8_input_reports_an_io_error_and_processes_the_next_line() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(!stdout.contains("Read error:"));
     let number = stdout.find("NUM 42").expect("next line was not processed");
-    assert!(stdout[number..].contains("SEMICOLON"));
+    assert!(stdout[number..].contains("CON 42"));
     assert!(stdout[number..].contains("EOF"));
 }
 
 #[test]
-fn reports_unterminated_strings_and_scans_the_next_line() {
-    let output = run_repl(b"\"unfinished\n\"hello\";");
+fn reports_unterminated_strings_and_compiles_the_next_line() {
+    let output = run_repl(b"\"unfinished\n42\n");
     assert!(output.status.success());
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(
@@ -131,8 +208,8 @@ fn reports_unterminated_strings_and_scans_the_next_line() {
         "missing string error on stderr: {stderr}"
     );
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert_eq!(
-        stdout,
-        "> >    1 STRING \"hello\"\n   1 SEMICOLON\n   1 EOF\n> "
-    );
+    let number = stdout.find("NUM 42").expect("next line was not processed");
+    assert!(stdout[number..].contains("EOF"));
+    assert!(stdout[number..].contains("=== CODE ==="));
+    assert!(stdout[number..].contains("CON 42"));
 }

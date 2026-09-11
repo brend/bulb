@@ -1,6 +1,30 @@
 use super::{ScanError, Scanner, Token, TokenType::*};
 
 #[test]
+fn scans_decimals_with_a_single_integer_digit() {
+    for source in ["0.5", "1.25", "9.0"] {
+        assert_eq!(
+            Scanner::new(source).scan().expect("decimal should scan"),
+            vec![Token::new(Number, 1, source), Token::new(Eof, 1, "")],
+            "source: {source:?}"
+        );
+    }
+}
+
+#[test]
+fn scans_decimals_with_multiple_integer_digits() {
+    assert_eq!(
+        Scanner::new("12.5+123.75").scan().unwrap(),
+        vec![
+            Token::new(Number, 1, "12.5"),
+            Token::new(Plus, 1, "+"),
+            Token::new(Number, 1, "123.75"),
+            Token::new(Eof, 1, ""),
+        ]
+    );
+}
+
+#[test]
 fn scans_comparison_operators_at_end_of_input() {
     for (source, typ) in [
         ("=", Equal),
@@ -291,6 +315,21 @@ fn reports_unexpected_characters_after_a_closed_string() {
         Scanner::new("\"@ is allowed inside\"@").scan(),
         Err(ScanError::UnexpectedChar('@'))
     ));
+}
+
+#[test]
+fn nul_inside_a_closed_string_is_not_mistaken_for_eof() {
+    let source = "\"a\0b\"";
+    // Either string policy is valid: preserve NUL or explicitly reject it.
+    // A closing quote is present, so UnterminatedString is never correct.
+    match Scanner::new(source).scan() {
+        Ok(tokens) => assert_eq!(
+            tokens,
+            vec![Token::new(String, 1, source), Token::new(Eof, 1, "")]
+        ),
+        Err(ScanError::UnexpectedChar('\0')) => (),
+        Err(error) => panic!("closed string containing NUL was misdiagnosed: {error:?}"),
+    }
 }
 
 #[test]

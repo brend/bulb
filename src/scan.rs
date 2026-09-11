@@ -234,15 +234,10 @@ impl<'a> Scanner<'a> {
     }
 
     fn number(&mut self) -> Token<'a> {
-        while self.peek().is_ascii_digit() {
-            self.consume();
-
-            if self.peek() == '.' {
-                self.consume();
-                while self.peek().is_ascii_digit() {
-                    self.consume();
-                }
-                break;
+        let mut saw_dot = false;
+        while self.peek().is_ascii_digit() || (!saw_dot && self.peek() == '.') {
+            if self.consume() == '.' {
+                saw_dot = true;
             }
         }
 
