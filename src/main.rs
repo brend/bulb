@@ -1,23 +1,35 @@
-fn main() -> Result<(), std::io::Error> {
+fn main() {
+    repl()
+}
+
+fn repl() {
     let mut input = String::new();
 
     loop {
         print!("> ");
-        stdout().flush()?;
-
+        stdout().flush().unwrap();
         input.clear();
-        let bytes_read = stdin().read_line(&mut input)?;
-        if bytes_read == 0 {
-            return Ok(());
-        }
 
-        let scanner = Scanner::new(&input);
-        let tokens = scanner.scan();
-
-        for t in tokens {
-            println!("{:>4} {}", t.line, t);
+        match stdin().read_line(&mut input) {
+            Ok(bytes_read) if bytes_read == 0 => return,
+            Ok(_) => match run(&input) {
+                Err(error) => eprintln!("Scan error: {:?}", error),
+                _ => (),
+            },
+            Err(error) => eprintln!("Read error: {:?}", error),
         }
     }
+}
+
+fn run(source: &str) -> Result<(), ScanError> {
+    let scanner = Scanner::new(source);
+    let tokens = scanner.scan()?;
+
+    for t in tokens {
+        println!("{:>4} {}", t.line, t);
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -69,6 +81,7 @@ impl<'a> Token<'a> {
 use std::{
     collections::HashMap,
     io::{Write, stdin, stdout},
+    iter::Scan,
 };
 
 use TokenType::*;
@@ -103,6 +116,18 @@ impl<'a> std::fmt::Display for Token<'a> {
     }
 }
 
+#[derive(Debug)]
+enum ScanError {
+    UnexpectedChar(char),
+    Io(std::io::Error),
+}
+
+impl From<std::io::Error> for ScanError {
+    fn from(value: std::io::Error) -> Self {
+        ScanError::Io(value)
+    }
+}
+
 struct Scanner<'a> {
     source: &'a str,
     start: usize,
@@ -126,7 +151,7 @@ impl<'a> Scanner<'a> {
         HashMap::from([("if", If), ("else", Else), ("fn", Fn), ("return", Return)])
     }
 
-    fn scan(mut self) -> Vec<Token<'a>> {
+    fn scan(mut self) -> Result<Vec<Token<'a>>, ScanError> {
         let mut tokens = vec![];
 
         loop {
@@ -135,12 +160,12 @@ impl<'a> Scanner<'a> {
             if self.is_at_end() {
                 break;
             }
-            tokens.push(self.token());
+            tokens.push(self.token()?);
         }
 
         tokens.push(self.make(Eof));
 
-        tokens
+        Ok(tokens)
     }
 
     fn skip_whitespace(&mut self) {
@@ -151,8 +176,8 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn token(&mut self) -> Token<'a> {
-        match self.consume() {
+    fn token(&mut self) -> Result<Token<'a>, ScanError> {
+        Ok(match self.consume() {
             '+' => self.make(Plus),
             '-' => self.make(Minus),
             '*' => self.make(Star),
@@ -181,8 +206,8 @@ impl<'a> Scanner<'a> {
             '.' => self.make(Dot),
             c if c.is_ascii_digit() => self.number(),
             c if c.is_alphabetic() || c == '_' => self.identifier(),
-            _ => unreachable!(),
-        }
+            c => return Err(ScanError::UnexpectedChar(c)),
+        })
     }
 
     fn peek(&self) -> char {
@@ -198,7 +223,7 @@ impl<'a> Scanner<'a> {
     fn match_char(&mut self, c: char) -> bool {
         if self.peek() == c {
             self.consume();
-            return true
+            return true;
         }
         false
     }
@@ -249,9 +274,116 @@ mod tests {
     use super::*;
 
     #[test]
+    fn scans_comparison_operators_at_end_of_input() {
+        for (source, typ) in [
+            ("=", Equal),
+            ("<", Less),
+            ("<=", LessEqual),
+            (">", Greater),
+            (">=", GreaterEqual),
+        ] {
+            assert_eq!(
+                Scanner::new(source)
+                    .scan()
+                    .expect("valid source should scan"),
+                vec![Token::new(typ, 1, source), Token::new(Eof, 1, "")],
+                "source: {source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn comparison_lookahead_preserves_adjacent_tokens_and_whitespace() {
+        assert_eq!(
+            Scanner::new("<é>=2<==>\n= > =")
+                .scan()
+                .expect("valid source should scan"),
+            vec![
+                Token::new(Less, 1, "<"),
+                Token::new(Identifier("é"), 1, "é"),
+                Token::new(GreaterEqual, 1, ">="),
+                Token::new(Number(2.), 1, "2"),
+                Token::new(LessEqual, 1, "<="),
+                Token::new(Equal, 1, "="),
+                Token::new(Greater, 1, ">"),
+                Token::new(Equal, 2, "="),
+                Token::new(Greater, 2, ">"),
+                Token::new(Equal, 2, "="),
+                Token::new(Eof, 2, ""),
+            ]
+        );
+    }
+
+    #[test]
+    fn recognizes_function_keywords_only_as_complete_lowercase_words() {
+        assert_eq!(
+            Scanner::new("fn return fn2 fn_ returnValue return_ Fn Return")
+                .scan()
+                .expect("valid source should scan"),
+            vec![
+                Token::new(Fn, 1, "fn"),
+                Token::new(Return, 1, "return"),
+                Token::new(Identifier("fn2"), 1, "fn2"),
+                Token::new(Identifier("fn_"), 1, "fn_"),
+                Token::new(Identifier("returnValue"), 1, "returnValue"),
+                Token::new(Identifier("return_"), 1, "return_"),
+                Token::new(Identifier("Fn"), 1, "Fn"),
+                Token::new(Identifier("Return"), 1, "Return"),
+                Token::new(Eof, 1, ""),
+            ]
+        );
+    }
+
+    #[test]
+    fn displays_new_tokens_in_repl_output() {
+        for (typ, expected) in [
+            (Equal, "EQUAL"),
+            (Less, "LESS"),
+            (LessEqual, "LESS_EQUAL"),
+            (Greater, "GREATER"),
+            (GreaterEqual, "GREATER_EQUAL"),
+            (Fn, "FN"),
+            (Return, "RETURN"),
+            (Comma, "COMMA"),
+            (Dot, "DOT"),
+        ] {
+            assert_eq!(Token::new(typ, 1, "").to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn unsupported_input_returns_the_first_unexpected_character() {
+        for (source, expected) in [
+            ("@", '@'),
+            ("42;\n  @ !", '@'),
+            ("éclair 💡", '💡'),
+            ("<@", '@'),
+            (">💡", '💡'),
+            ("\0", '\0'),
+        ] {
+            assert!(
+                matches!(Scanner::new(source).scan(),
+                    Err(ScanError::UnexpectedChar(actual)) if actual == expected),
+                "source: {source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn run_propagates_scan_errors() {
+        assert!(matches!(
+            run("return @"),
+            Err(ScanError::UnexpectedChar('@'))
+        ));
+        assert!(run("fn example() { return 42; }").is_ok());
+    }
+
+    #[test]
     fn scans_all_punctuation_without_whitespace() {
         assert_eq!(
-            Scanner::new("+-*/(){};").scan(),
+            Scanner::new("+-*/(){};,.")
+                .scan()
+                .expect("valid source should scan"),
             vec![
                 Token::new(Plus, 1, "+"),
                 Token::new(Minus, 1, "-"),
@@ -262,6 +394,8 @@ mod tests {
                 Token::new(LeftBrace, 1, "{"),
                 Token::new(RightBrace, 1, "}"),
                 Token::new(Semicolon, 1, ";"),
+                Token::new(Comma, 1, ","),
+                Token::new(Dot, 1, "."),
                 Token::new(Eof, 1, ""),
             ]
         );
@@ -270,7 +404,9 @@ mod tests {
     #[test]
     fn recognizes_only_exact_lowercase_keywords() {
         assert_eq!(
-            Scanner::new("if else iffy elsewhere if2 else_ If ELSE").scan(),
+            Scanner::new("if else iffy elsewhere if2 else_ If ELSE")
+                .scan()
+                .expect("valid source should scan"),
             vec![
                 Token::new(If, 1, "if"),
                 Token::new(Else, 1, "else"),
@@ -288,7 +424,9 @@ mod tests {
     #[test]
     fn preserves_utf8_identifiers_and_byte_boundaries() {
         assert_eq!(
-            Scanner::new("_x2+éclair;\n变量9").scan(),
+            Scanner::new("_x2+éclair;\n变量9")
+                .scan()
+                .expect("valid source should scan"),
             vec![
                 Token::new(Identifier("_x2"), 1, "_x2"),
                 Token::new(Plus, 1, "+"),
@@ -303,7 +441,9 @@ mod tests {
     #[test]
     fn scans_sample_with_exact_lexemes() {
         let source = String::from(" 23; 47; 69 ; 67;88;99;");
-        let tokens = Scanner::new(&source).scan();
+        let tokens = Scanner::new(&source)
+            .scan()
+            .expect("valid source should scan");
         let expected = [
             "23", ";", "47", ";", "69", ";", "67", ";", "88", ";", "99", ";", "",
         ];
@@ -324,7 +464,9 @@ mod tests {
     #[test]
     fn tracks_lines_and_skips_unicode_whitespace() {
         assert_eq!(
-            Scanner::new("\u{2003}9\n ;\n\t").scan(),
+            Scanner::new("\u{2003}9\n ;\n\t")
+                .scan()
+                .expect("valid source should scan"),
             vec![
                 Token::new(Number(9.), 1, "9"),
                 Token::new(Semicolon, 2, ";"),
@@ -335,10 +477,18 @@ mod tests {
 
     #[test]
     fn handles_empty_input_and_number_at_end() {
-        assert_eq!(Scanner::new("").scan(), vec![Token::new(Eof, 1, "")]);
-        assert_eq!(Scanner::new(" \n\t").scan(), vec![Token::new(Eof, 2, "")]);
         assert_eq!(
-            Scanner::new("99").scan(),
+            Scanner::new("").scan().expect("valid source should scan"),
+            vec![Token::new(Eof, 1, "")]
+        );
+        assert_eq!(
+            Scanner::new(" \n\t")
+                .scan()
+                .expect("valid source should scan"),
+            vec![Token::new(Eof, 2, "")]
+        );
+        assert_eq!(
+            Scanner::new("99").scan().expect("valid source should scan"),
             vec![Token::new(Number(99.), 1, "99"), Token::new(Eof, 1, "")]
         );
     }
