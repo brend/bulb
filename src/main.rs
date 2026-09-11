@@ -35,6 +35,8 @@ enum TokenType<'a> {
 
     If,
     Else,
+    Fn,
+    Return,
     
     Semicolon,
     
@@ -73,6 +75,8 @@ impl<'a> std::fmt::Display for Token<'a> {
             Identifier(value) => write!(f, "IDENT {}", value),
             If => write!(f, "IF"),
             Else => write!(f, "ELSE"),
+            Fn => write!(f, "FN"),
+            Return => write!(f, "RETURN"),
             Semicolon => write!(f, "SEMICOLON"),
             Eof => write!(f, "EOF"),
         }
@@ -102,6 +106,8 @@ impl<'a> Scanner<'a> {
         HashMap::from([
             ("if", If),
             ("else", Else),
+            ("fn", Fn),
+            ("return", Return),
         ])
     }
 
@@ -141,7 +147,7 @@ impl<'a> Scanner<'a> {
             '{' => self.make(LeftBrace),
             '}' => self.make(RightBrace),
             ';' => self.make(Semicolon),
-            c if c.is_digit(10) => self.number(),
+            c if c.is_ascii_digit() => self.number(),
             c if c.is_alphabetic() || c == '_' => self.identifier(),
             _ => unreachable!(),
         }
@@ -173,7 +179,7 @@ impl<'a> Scanner<'a> {
 
         let value = self.source[self.start..self.current]
             .parse::<f64>()
-            .unwrap();
+            .expect("Unable to parse number");
 
         self.make(Number(value))
     }
@@ -182,7 +188,7 @@ impl<'a> Scanner<'a> {
         loop {
             let c = self.peek();
 
-            if c.is_alphabetic() || c.is_digit(10) || c == '_' {
+            if c.is_alphabetic() || c.is_ascii_digit() || c == '_' {
                 self.consume();
             } else {
                 break;
