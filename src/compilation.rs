@@ -6,6 +6,14 @@ pub enum Opcode {
     Const(f64),
 }
 
+impl std::fmt::Display for Opcode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Opcode::Const(value) => write!(f, "CON {}", value),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Instruction {
     opcode: Opcode,
@@ -14,14 +22,17 @@ pub struct Instruction {
 
 impl Instruction {
     fn new(opcode: Opcode, line: usize) -> Instruction {
-        Instruction { 
-            opcode,
-            line 
-        }
+        Instruction { opcode, line }
     }
 
     pub fn line(&self) -> usize {
         self.line
+    }
+}
+
+impl std::fmt::Display for Instruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:<4} {}", self.line(), self.opcode)
     }
 }
 
@@ -81,7 +92,10 @@ impl<'a> Compiler<'a> {
 
     fn number(&mut self, token: &Token<'a>) -> Result<(), ParseError> {
         match token.lexeme().parse::<f64>() {
-            Ok(value) => Ok(self.emit(Opcode::Const(value), &token)),
+            Ok(value) => {
+                self.emit(Opcode::Const(value), token);
+                Ok(())
+            }
             _ => Err(ParseError::InvalidNumericLiteral),
         }
     }

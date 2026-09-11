@@ -46,7 +46,7 @@ fn run(source: &str) -> Result<(), ScanError> {
 
     println!("=== CODE ===");
     for inst in code {
-        println!("{:>4} {:?}", inst.line(), inst);
+        println!("{:>4} {}", inst.line(), inst);
     }
 
     Ok(())
