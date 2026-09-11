@@ -1,13 +1,14 @@
-fn main() {
+fn main() -> Result<(), std::io::Error> {
     let mut input = String::new();
 
     loop {
         print!("> ");
-        stdout().flush().unwrap();
+        stdout().flush()?;
 
         input.clear();
-        stdin().read_line(&mut input).expect("could not read from stdin for some reason");
-        
+        let bytes_read = stdin().read_line(&mut input)?;
+        if bytes_read == 0 { return Ok(()); }
+
         let scanner = Scanner::new(&input);
         let tokens = scanner.scan();
 
@@ -200,6 +201,58 @@ impl<'a> Scanner<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scans_all_punctuation_without_whitespace() {
+        assert_eq!(
+            Scanner::new("+-*/(){};").scan(),
+            vec![
+                Token::new(Plus, 1, "+"),
+                Token::new(Minus, 1, "-"),
+                Token::new(Star, 1, "*"),
+                Token::new(Slash, 1, "/"),
+                Token::new(LeftParen, 1, "("),
+                Token::new(RightParen, 1, ")"),
+                Token::new(LeftBrace, 1, "{"),
+                Token::new(RightBrace, 1, "}"),
+                Token::new(Semicolon, 1, ";"),
+                Token::new(Eof, 1, ""),
+            ]
+        );
+    }
+
+    #[test]
+    fn recognizes_only_exact_lowercase_keywords() {
+        assert_eq!(
+            Scanner::new("if else iffy elsewhere if2 else_ If ELSE").scan(),
+            vec![
+                Token::new(If, 1, "if"),
+                Token::new(Else, 1, "else"),
+                Token::new(Identifier("iffy"), 1, "iffy"),
+                Token::new(Identifier("elsewhere"), 1, "elsewhere"),
+                Token::new(Identifier("if2"), 1, "if2"),
+                Token::new(Identifier("else_"), 1, "else_"),
+                Token::new(Identifier("If"), 1, "If"),
+                Token::new(Identifier("ELSE"), 1, "ELSE"),
+                Token::new(Eof, 1, ""),
+            ]
+        );
+    }
+
+    #[test]
+    fn preserves_utf8_identifiers_and_byte_boundaries() {
+        assert_eq!(
+            Scanner::new("_x2+éclair;\n变量9").scan(),
+            vec![
+                Token::new(Identifier("_x2"), 1, "_x2"),
+                Token::new(Plus, 1, "+"),
+                Token::new(Identifier("éclair"), 1, "éclair"),
+                Token::new(Semicolon, 1, ";"),
+                Token::new(Identifier("变量9"), 2, "变量9"),
+                Token::new(Eof, 2, ""),
+            ]
+        );
+    }
 
     #[test]
     fn scans_sample_with_exact_lexemes() {
